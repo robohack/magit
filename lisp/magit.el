@@ -503,7 +503,7 @@ defaulting to the tag at point.
              (?w "Apply patches"   magit-am-popup)
              (?W "Format patches"  magit-patch-popup)
              (?X "Resetting"       magit-reset-popup)
-             (?y "Show Refs"       magit-show-refs-popup)
+             (?y "Show Refs"       magit-list-references)
              (?z "Stashing"        magit-stash-popup)
              (?! "Running"         magit-run-popup)
              "Applying changes"
