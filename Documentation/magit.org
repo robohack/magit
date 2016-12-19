@@ -4276,15 +4276,40 @@ The following words are used:
   in the buffer used to edit the rebase sequence.  See [[*Editing Rebase
   Sequences]].
 
-- The commit prefixed with ~onto~ is the commit on top of which all the
-  other commits are being re-applied.  Like the commits that have
-  already been re-applied, it is reachable from ~HEAD~, but unlike those
-  it has not actually been re-applied during the current session - it
-  wasn't touched at all.
+- Commits prefixed with ~done~ and ~onto~ have already been applied.
+  These commits may not be the only displayed commits that have
+  already been applied and which are discribed below.
 
-- Commits prefixed with ~done~ have already been re-applied.  Not all
-  commits that have already been applied are prefixed with this word,
-  though.
+  It is possible for such a commit to be the ~HEAD~, in which case it
+  is blue.  Otherwise it is grey.
+
+  - The commit prefixed with ~onto~ is the commit on top of which all
+    the other commits are being re-applied.  This commit itself did
+    not have to be re-applied, it is the commit rebase did rewind to
+    before starting to re-apply other commits.
+
+  - Commits prefixed with ~done~ have already been re-applied and cannot
+    be associated with the commit that rebase stopped at based on its
+    hash, tree or patch-id [fn:patch-id].
+
+- All other commits, those not prefixed with any of the above words,
+  are in some way related to the commit at which rebase stopped.
+
+  To determine whether a commit is related to the stopped-at commit
+  their hashes, trees and patch-ids are being compared.  The commit
+  message is not used for this purpose.
+
+  Generally speaking commits that are related to the stopped-at commit
+  can have any color, though not all color/word combinations are
+  possible.  Words used for stopped-at commits are: ...
+
+
+
+- All commits that have already been applied during the rebase, except
+  for the ~HEAD~ commit and possibly the commit rebase stopped at are
+  prefixed with ~done~.  This includes unchanged commits, commits with
+  unchanged patch-ids, modified commits whose patch-id [fn:patch-id]
+  has changed, and new commits.
 
 - When a commit is prefixed with ~void~, then that indicates that Magit
   knows for sure that all the changes in that commit have been applied
@@ -4301,39 +4326,53 @@ The following words are used:
   yet (it isn't the ~HEAD~).  So it is shown in yellow, like the other
   commits that still have to be applied.
 
-- When a commit is prefixed with ~goal~, ~same~, or ~work~, then that
-  indicates that you reset to an earlier commit (and that this commit
-  therefore is no longer reachable from ~HEAD~), but that it might still
-  be possible to create a new commit with the exact same tree or at
-  least the same patch-id [fn:patch-id], without manually editing any
-  file.  Or at the very least that there are some uncommitted
-  remaining, which may or may not originate from that commit.
+- When a commit is prefixed with ~stop~ or a /blue/ or /green/ ~same~, then
+  that indicates that rebase stopped at this commit, that it is still
+  applied or has been applied again, and that at least its patch-id is
+  unchanged.
+
+  - When a commit is prefixed with ~stop~, then that indicates that
+    rebase stopped at that commit because you requested that earlier,
+    and its patch-id is unchanged.  It might even still be the exact
+    same commit.
+
+  - When a commit is prefixed with a /blue/ or /green/ ~same~, then that
+    indicates that while its tree or hash changed, its patch-id did
+    not.  If it is blue, then it is the ~HEAD~ commit (as always for
+    blue).  When it is green, then it no longer is ~HEAD~ because other
+    commit have been created since (but before continuing the rebase).
+
+- When a commit is prefixed with ~goal~, a /yellow/ ~same,~ or ~work~, then
+  that indicates that rebase applied that commit but that you then
+  reset ~HEAD~ to an earlier commit (likely to split it up into multiple
+  commits), and that there are some uncommitted changes remaining
+  which likely (but not necessarily) originate from that commit.
 
   - When a commit is prefixed with ~goal~, then that indicates that it
-    is still possible to create a commit with the exact same tree
-    (the "goal") without manually editing a file, by simply committing
-    the index (or, provided nothing is already staged, by staging all
-    unstaged changes and then committing that).  This is the case when
-    the original tree exists in the index or worktree in untainted
-    form.
+    is still possible to create a new commit with the exact same tree
+    (the "goal") without manually editing any files, by committing the
+    index, or by staging all changes and then committing that.  This
+    is the case when the original tree still exists in the index or
+    worktree in untainted form.
 
-  - When a commit is prefixed with ~same~, then that indicates that it
-    is no longer possible to create a commit with the exact same tree,
-    but that it is still possible to create a commit with the same
-    patch-id.  This would be the case if you created a new commit with
-    other changes, but the changes from the original commit still
-    exist in the index and/or working tree in untainted form.
+  - When a commit is prefixed with a yellow ~same~, then that indicates
+    that it is no longer possible to create a commit with the exact
+    same tree, but that it is still possible to create a commit with
+    the same patch-id.  This would be the case if you created a new
+    commit with other changes, but the changes from the original
+    commit still exist in the index or working tree in untainted form.
 
   - When a commit is prefixed with ~work~, then that indicates that you
-    are working with the changes from that commit after resetting to
-    an earlier commit.  There are changes in the index and/or working
-    tree and some of them likely originate from that commit.
+    reset ~HEAD~ to an earlier commit, and that there are some staged
+    and/or unstaged changes (likely, but not necessarily) originating
+    from that commit.  However it is no longer possible to create a
+    new commit with the same tree or at least the same patch-id
+    because you have already made other changes.
 
-- When a commit is prefixed with ~poof~ or ~gone~, then that indicates
-  that you reset to an earlier commit (and that this commit therefore
-  is no longer reachable from ~HEAD~), and that there are no
-  uncommitted changes remaining which might allow you to create a new
-  commit with the same tree or at least the same patch-id.
+- When a commit is prefixed with ~poof~ or ~gone~, then
+  that indicates that rebase applied that commit but that you then
+  reset ~HEAD~ to an earlier commit (likely to split it up into multiple
+  commits), and that there are no uncommitted changes.
 
   - When a commit is prefixed with ~poof~, then that indicates that it
     is no longer reachable from ~HEAD~, but that it has been replaced
@@ -4356,15 +4395,15 @@ importantly these sequences only support "picking" a commit but not
 other actions such as "rewording", and they do not keep track of the
 commits which have already been applied.
 
-[fn:patch-id] The patch-id is a hash of the /changes/ introduced by
-commit.  It differs from hash of the commit itself, which is a hash of
-the result of applying that change (i.e. the resulting trees and
+[fn:patch-id] The patch-id is a hash of the /changes/ introduced by a
+commit.  It differs from hash of the commit itself, which is a hash
+of the result of applying that change (i.e. the resulting trees and
 blobs) as well as author and committer information, the commit
 message, and the hashes of the parents of the commit.  The patch-id
 hash on the other hand is created only from the added and removed
-lines, even line numbers and whitespace are created when calculating
+lines, even line numbers and whitespace are ignored when calculating
 the hash.  The patch-ids of two commits can be used to answer the
-question "Do these two commits make the same change?".
+question "Do these commits make the same change?".
 
 ** Cherry Picking
 *** _ :ignore:
