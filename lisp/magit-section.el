@@ -295,6 +295,33 @@ With a prefix argument also expand it." heading)
                   (recenter 0)))
        (message ,(format "Section \"%s\" wasn't found" heading)))))
 
+;;;; Region
+
+(defun magit-turn-on-shift-select-mode-p ()
+  (and shift-select-mode
+       this-command-keys-shift-translated
+       (not mark-active)
+       (not (eq (car-safe transient-mark-mode) 'only))))
+
+(defun magit-previous-line-or-set-mark (&optional arg try-vscroll)
+  (declare (interactive-only forward-line))
+  (interactive "p\np")
+  (if (magit-turn-on-shift-select-mode-p)
+      (push-mark-command t)
+    (with-no-warnings
+      (previous-line arg try-vscroll))))
+
+(defun magit-next-line-or-set-mark (&optional arg try-vscroll)
+  (declare (interactive-only forward-line))
+  (interactive "p\np")
+  (if (magit-turn-on-shift-select-mode-p)
+      (push-mark-command t)
+    (with-no-warnings
+      (next-line arg try-vscroll))))
+
+;; (define-key magit-mode-map (kbd "C-i") 'magit-previous-line-or-set-mark)
+;; (define-key magit-mode-map (kbd "C-k") 'magit-next-line-or-set-mark)
+
 ;;;; Visibility
 
 (defun magit-section-show (section)
