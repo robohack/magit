@@ -1133,7 +1133,7 @@ SORTBY is a key or list of keys to pass to the `--sort' flag of
 
 (defun magit-get-submodule-name (path)
   "Return the name of the submodule at PATH.
-PATH has to be relative to the working directory."
+PATH has to be relative to the super-repository."
   (cadr (split-string
          (car (or (magit-git-items
                    "config" "-z"
