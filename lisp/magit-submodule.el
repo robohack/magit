@@ -98,11 +98,11 @@ an alist that supports the keys `:right-align' and `:pad-right'."
     (?c "Clone one module            " magit-submodule-clone)
     (?I "Initialize all modules      " magit-submodule-initialize-all)
     (?C "Clone all modules           " magit-submodule-clone-all)
-    "Synchronize module(s)"
+    "Synchronize module(s)              Configure module(s)"
     (?s "Synchronize one module      " magit-submodule-synchronize)
-    nil
+    (?e "Configure one module        " magit-submodule-configure)
     (?S "Synchronize all modules     " magit-submodule-synchronize-all)
-    nil
+    (?E "Configure all modules       " magit-submodule-configure-all)
     "Add                                Remove"
     (?a "Add one new module          " magit-submodule-add)
     (?x "Deinit one module           " magit-submodule-deinit)
@@ -294,6 +294,18 @@ With a prefix argument fetch all remotes."
   (interactive)
   (magit-with-toplevel
     (magit-run-git-async "submodule" "sync")))
+
+;;;###autoload
+(defun magit-submodule-configure (module)
+  "Update \".gitmodules\" according to MODULE's configuration."
+  (interactive (list (magit-read-module-path "Configure module")))
+  )
+
+;;;###autoload
+(defun magit-submodule-configure-all (module)
+  "Update \".gitmodules\" according to the configuration of all modules."
+  (interactive)
+  )
 
 ;;;; Add/Remove/Deinit
 
