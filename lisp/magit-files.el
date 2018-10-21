@@ -226,7 +226,31 @@ directory, while reading the FILENAME."
 ;;;###autoload (autoload 'magit-file-popup "magit" nil t)
 (magit-define-popup magit-file-popup
   "Popup console for Magit commands in file-visiting buffers."
-  :actions magit-file-popup-actions
+  :actions '((?s "Stage"     magit-stage-file)
+             (?D "Diff..."   magit-diff-buffer-file-popup)
+             (?L "Log..."    magit-log-buffer-file-popup)
+             (?B "Blame..."  magit-blame-popup) nil
+             (?u "Unstage"   magit-unstage-file)
+             (?d "Diff"      magit-diff-buffer-file)
+             (?l "Log"       magit-log-buffer-file)
+             (?b "Blame"     magit-blame-addition)
+             (?p "Prev blob" magit-blob-previous)
+             (?c "Commit"    magit-commit-popup) nil
+             (?t "Trace"     magit-log-trace-definition)
+             (?r (lambda ()
+                   (with-current-buffer magit-pre-popup-buffer
+                     (and (not buffer-file-name)
+                          (propertize "...removal" 'face 'default))))
+                 magit-blame-removal)
+             (?n "Next blob" magit-blob-next)
+             (?e "Edit line" magit-edit-line-commit)
+             nil nil
+             (?f (lambda ()
+                   (with-current-buffer magit-pre-popup-buffer
+                     (and (not buffer-file-name)
+                          (propertize "...reverse" 'face 'default))))
+                 magit-blame-reverse)
+             nil)
   :max-action-columns 5)
 
 (defvar magit-file-mode-lighter "")
@@ -248,10 +272,18 @@ Currently this only adds the following key bindings.
 ;;;###autoload
 (define-globalized-minor-mode global-magit-file-mode
   magit-file-mode magit-file-mode-turn-on
-  :package-version '(magit . "2.2.0")
+  :package-version '(magit . "2.13.0")
   :link '(info-link "(magit)Minor Mode for Buffers Visiting Files")
   :group 'magit-essentials
-  :group 'magit-modes)
+  :group 'magit-modes
+  :init-value t)
+;; Unfortunately `:init-value t' only sets the value of the mode
+;; variable but does not cause the mode function to be called, and we
+;; cannot use `:initialize' to call that explicitly because the option
+;; is defined before the functions, so we have to do it here.
+(cl-eval-when (load)
+  (when global-magit-file-mode
+    (global-magit-file-mode 1)))
 
 ;;; Blob Mode
 
@@ -260,12 +292,14 @@ Currently this only adds the following key bindings.
     (cond ((featurep 'jkl)
            (define-key map "i" 'magit-blob-previous)
            (define-key map "k" 'magit-blob-next)
-           (define-key map "j" 'magit-blame)
-           (define-key map "l" 'magit-blame-reverse))
+           (define-key map "j" 'magit-blame-addition)
+           (define-key map "l" 'magit-blame-removal)
+           (define-key map "f" 'magit-blame-reverse))
           (t
            (define-key map "p" 'magit-blob-previous)
            (define-key map "n" 'magit-blob-next)
-           (define-key map "b" 'magit-blame)
+           (define-key map "b" 'magit-blame-addition)
+           (define-key map "r" 'magit-blame-removal)
            (define-key map "f" 'magit-blame-reverse)))
     (define-key map "q" 'magit-kill-this-buffer)
     map)
@@ -293,8 +327,8 @@ Currently this only adds the following key bindings.
 (defun magit-blob-previous ()
   "Visit the previous blob which modified the current file."
   (interactive)
-  (-if-let (file (or magit-buffer-file-name
-                     (buffer-file-name (buffer-base-buffer))))
+  (if-let ((file (or magit-buffer-file-name
+                     (buffer-file-name (buffer-base-buffer)))))
       (--if-let (magit-blob-ancestor magit-buffer-revision file)
           (magit-blob-visit it (line-number-at-pos))
         (user-error "You have reached the beginning of time"))
@@ -303,7 +337,7 @@ Currently this only adds the following key bindings.
 (defun magit-blob-visit (blob-or-file line)
   (if (stringp blob-or-file)
       (find-file blob-or-file)
-    (-let [(rev file) blob-or-file]
+    (pcase-let ((`(,rev ,file) blob-or-file))
       (magit-find-file rev file)
       (apply #'message "%s (%s %s ago)"
              (magit-rev-format "%s" rev)
@@ -334,7 +368,9 @@ Currently this only adds the following key bindings.
 If FILE isn't tracked in Git, fallback to using `rename-file'."
   (interactive
    (let* ((file (magit-read-file "Rename file"))
-          (newname (read-file-name (format "Rename %s to file: " file))))
+          (dir (file-name-directory file))
+          (newname (read-file-name (format "Rename %s to file: " file)
+                                   (and dir (expand-file-name dir)))))
      (list (expand-file-name file (magit-toplevel))
            (expand-file-name newname))))
   (if (magit-file-tracked-p (magit-convert-filename-for-git file))
@@ -411,11 +447,11 @@ Git, then fallback to using `delete-file'."
 (defun magit-read-file (prompt &optional tracked-only)
   (let ((choices (nconc (magit-list-files)
                         (unless tracked-only (magit-untracked-files)))))
-    (magit-completing-read prompt choices nil t nil nil
-                           (car (member (or (magit-section-when (file submodule))
-                                            (magit-file-relative-name
-                                             nil tracked-only))
-                                        choices)))))
+    (magit-completing-read
+     prompt choices nil t nil nil
+     (car (member (or (magit-section-value-if '(file submodule))
+                      (magit-file-relative-name nil tracked-only))
+                  choices)))))
 
 (defun magit-read-tracked-file (prompt)
   (magit-read-file prompt t))
@@ -493,7 +529,7 @@ If the value is the symbol `buffer', then use the same arguments
 as the buffer.  With a prefix argument use no arguments.
 
 If the value is a list beginning with the symbol `exclude', then
-use the arguments as the buffer except for those matched by
+use the same arguments as the buffer except for those matched by
 entries in the cdr of the list.  The comparison is done using
 `string-prefix-p'.  With a prefix argument use the same arguments
 as the buffer.

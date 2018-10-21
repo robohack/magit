@@ -19,7 +19,7 @@
 ;; Keywords: git tools vc
 ;; Homepage: https://github.com/magit/magit
 
-;; Magit requires at least GNU Emacs 24.4 and Git 1.9.4.
+;; Magit requires at least GNU Emacs 25.1 and Git 2.0.0.
 
 ;; Magit is free software; you can redistribute it and/or modify it
 ;; under the terms of the GNU General Public License as published by
@@ -61,8 +61,8 @@
 (require 'format-spec)
 (require 'package nil t) ; used in `magit-version'
 
-(defconst magit--minimal-git "1.9.4")
-(defconst magit--minimal-emacs "24.4")
+(defconst magit--minimal-git "2.0.0")
+(defconst magit--minimal-emacs "25.1")
 
 ;;; Faces
 
@@ -121,6 +121,14 @@ own faces for the `header-line', or for parts of the
   "Face for current branch."
   :group 'magit-faces)
 
+(defface magit-branch-upstream
+  '((t :slant italic))
+  "Face for upstream branch.
+This face is only used in logs and it gets combined
+ with `magit-branch-local', `magit-branch-remote'
+and/or `magit-branch-remote-head'."
+  :group 'magit-faces)
+
 (defface magit-head
   '((((class color) (background light)) :inherit magit-branch-local)
     (((class color) (background  dark)) :inherit magit-branch-local))
@@ -135,7 +143,7 @@ own faces for the `header-line', or for parts of the
 
 (defface magit-refname-stash
   '((t :inherit magit-refname))
-  "Face for wip refnames."
+  "Face for stash refnames."
   :group 'magit-faces)
 
 (defface magit-refname-wip
@@ -143,9 +151,19 @@ own faces for the `header-line', or for parts of the
   "Face for wip refnames."
   :group 'magit-faces)
 
+(defface magit-refname-pullreq
+  '((t :inherit magit-refname))
+  "Face for pullreq refnames."
+  :group 'magit-faces)
+
 (defface magit-keyword
   '((t :inherit font-lock-string-face))
   "Face for parts of commit messages inside brackets."
+  :group 'magit-faces)
+
+(defface magit-keyword-squash
+  '((t :inherit font-lock-warning-face))
+  "Face for squash! and fixup! keywords in commit messages."
   :group 'magit-faces)
 
 (defface magit-signature-good
@@ -200,28 +218,10 @@ own faces for the `header-line', or for parts of the
 
 ;;; Dispatch Popup
 
-(defvar magit-file-popup-actions
-  '((?s "Stage"     magit-stage-file)
-    (?D "Diff..."   magit-diff-buffer-file-popup)
-    (?L "Log..."    magit-log-buffer-file-popup)
-    (?B "Blame..."  magit-blame-popup) nil
-    (?u "Unstage"   magit-unstage-file)
-    (?d "Diff"      magit-diff-buffer-file)
-    (?l "Log"       magit-log-buffer-file)
-    (?b "Blame"     magit-blame)
-    (?p "Prev blob" magit-blob-previous)
-    (?c "Commit"    magit-commit-popup) nil nil
-    (?r (lambda ()
-          (with-current-buffer magit-pre-popup-buffer
-            (and (not buffer-file-name)
-                 (propertize "...reverse" 'face 'default))))
-        magit-blame-reverse)
-    (?n "Next blob" magit-blob-next)))
-
 ;;;###autoload (autoload 'magit-dispatch-popup "magit" nil t)
 (magit-define-popup magit-dispatch-popup
   "Popup console for dispatching other popups."
-  :actions `("Popup and dwim commands"
+  :actions '("Popup and dwim commands"
              (?A "Cherry-picking"  magit-cherry-pick-popup)
              (?b "Branching"       magit-branch-popup)
              (?B "Bisecting"       magit-bisect-popup)
@@ -271,19 +271,13 @@ own faces for the `header-line', or for parts of the
              (?\r   "  visit thing at point"     magit-visit-thing)
              ;; This binding has no effect and only appears to do
              ;; so because it is identical to the global binding.
-             ("C-h m" "show all key bindings"    describe-mode)
-             (lambda ()
-               (and (with-current-buffer magit-pre-popup-buffer
-                      buffer-file-name)
-                    (propertize "File commands" 'face 'magit-popup-heading)))
-             ,@magit-file-popup-actions)
+             ("C-h m" "show all key bindings"    describe-mode))
   :setup-function 'magit-dispatch-popup-setup
   :max-action-columns (lambda (heading)
                         (pcase heading
                           ("Popup and dwim commands" 4)
                           ("Applying changes" 3)
-                          ("Essential commands" 1)
-                          ("File commands" 5))))
+                          ("Essential commands" 1))))
 
 (defvar magit-dispatch-popup-map
   (let ((map (make-sparse-keymap)))
@@ -409,7 +403,6 @@ is run in the top-level directory of the current working tree."
        (2 'font-lock-function-name-face nil t))
       (,(concat "(" (regexp-opt '("magit-insert-section"
                                   "magit-section-case"
-                                  "magit-section-when"
                                   "magit-bind-match-strings"
                                   "magit-with-temp-index"
                                   "magit-with-blob"
@@ -545,6 +538,14 @@ See info node `(magit)Debugging Tools' for more information."
 ;;; Startup Asserts
 
 (defun magit-startup-asserts ()
+  (when-let ((val (getenv "GIT_DIR")))
+    (setenv "GIT_DIR")
+    (message "Magit unset $GIT_DIR (was %S).  See \
+https://github.com/magit/magit/wiki/Don't-set-$GIT_DIR-and-alike" val))
+  (when-let ((val (getenv "GIT_WORK_TREE")))
+    (setenv "GIT_WORK_TREE")
+    (message "Magit unset $GIT_WORK_TREE (was %S).  See \
+https://github.com/magit/magit/wiki/Don't-set-$GIT_DIR-and-alike" val))
   (let ((version (magit-git-version)))
     (when (and version
                (version< version magit--minimal-git)
@@ -601,8 +602,8 @@ For X11 something like ~/.xinitrc should work.\n"
   (require 'magit-stash)
   (require 'magit-blame)
   (require 'magit-obsolete)
+  (require 'magit-submodule)
   (unless (load "magit-autoloads" t t)
-    (require 'magit-submodule)
     (require 'magit-subtree)
     (require 'magit-ediff)
     (require 'magit-extras)

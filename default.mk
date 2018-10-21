@@ -43,6 +43,7 @@ INFOPAGES = $(addsuffix .info,$(filter-out git-commit,$(PACKAGES)))
 HTMLFILES = $(addsuffix .html,$(filter-out git-commit,$(PACKAGES)))
 HTMLDIRS  = $(filter-out git-commit,$(PACKAGES))
 PDFFILES  = $(addsuffix .pdf,$(filter-out git-commit,$(PACKAGES)))
+EPUBFILES = $(addsuffix .epub,$(filter-out git-commit,$(PACKAGES)))
 
 ELS  = git-commit.el
 ELS += magit-utils.el
@@ -91,22 +92,21 @@ ELGS = magit-autoloads.el magit-version.el
 
 VERSION ?= $(shell test -e $(TOP).git && git describe --tags --abbrev=0)
 
-ASYNC_VERSION       = 1.9.2
-DASH_VERSION        = 2.13.0
-GHUB_VERSION        = 2.0.0
-GIT_COMMIT_VERSION  = 2.10.3
-LET_ALIST_VERSION   = 1.0.5
-MAGIT_POPUP_VERSION = 2.13.0
-WITH_EDITOR_VERSION = 2.6.0
+ASYNC_VERSION       = 1.9.3
+DASH_VERSION        = 2.14.1
+GHUB_VERSION        = 2.0.1
+GIT_COMMIT_VERSION  = 2.13.0
+MAGIT_POPUP_VERSION = 2.12.3
+WITH_EDITOR_VERSION = 2.7.3
 
-ASYNC_MELPA_SNAPSHOT       = 20170823
-DASH_MELPA_SNAPSHOT        = 20170810
-GHUB_MELPA_SNAPSHOT        = 20171207
-GIT_COMMIT_MELPA_SNAPSHOT  = 20170823
-MAGIT_POPUP_MELPA_SNAPSHOT = 20171121
-WITH_EDITOR_MELPA_SNAPSHOT = 20170817
+ASYNC_MELPA_SNAPSHOT       = 20180527
+DASH_MELPA_SNAPSHOT        = 20180413
+GHUB_MELPA_SNAPSHOT        = 20180417
+GIT_COMMIT_MELPA_SNAPSHOT  = 20180602
+MAGIT_POPUP_MELPA_SNAPSHOT = 20180509
+WITH_EDITOR_MELPA_SNAPSHOT = 20180414
 
-EMACS_VERSION = 24.4
+EMACS_VERSION = 25.1
 
 EMACSOLD := $(shell $(BATCH) --eval \
   "(and (version< emacs-version \"$(EMACS_VERSION)\") (princ \"true\"))")
@@ -134,11 +134,25 @@ ifeq "$(GHUB_DIR)" ""
   GHUB_DIR = $(TOP)../ghub
 endif
 
+GRAPHQL_DIR ?= $(shell \
+  find -L $(ELPA_DIR) -maxdepth 1 -regex '.*/graphql-[.0-9]*' 2> /dev/null | \
+  sort | tail -n 1)
+ifeq "$(GRAPHQL_DIR)" ""
+  GRAPHQL_DIR = $(TOP)../graphql
+endif
+
 MAGIT_POPUP_DIR ?= $(shell \
   find -L $(ELPA_DIR) -maxdepth 1 -regex '.*/magit-popup-[.0-9]*' 2> /dev/null | \
   sort | tail -n 1)
 ifeq "$(MAGIT_POPUP_DIR)" ""
   MAGIT_POPUP_DIR = $(TOP)../magit-popup
+endif
+
+TREEPY_DIR ?= $(shell \
+  find -L $(ELPA_DIR) -maxdepth 1 -regex '.*/treepy-[.0-9]*' 2> /dev/null | \
+  sort | tail -n 1)
+ifeq "$(TREEPY_DIR)" ""
+  TREEPY_DIR = $(TOP)../treepy
 endif
 
 WITH_EDITOR_DIR ?= $(shell \
@@ -155,15 +169,23 @@ endif
 
 LOAD_PATH = -L $(TOP)/lisp
 
+# When making changes here, then don't forget to adjust Makefile,
+# .travis.yml, magit-emacs-Q-command and the "Installing from the
+# Git Repository" info node accordingly.
+
 ifdef CYGPATH
   LOAD_PATH += -L $(shell cygpath --mixed $(DASH_DIR))
   LOAD_PATH += -L $(shell cygpath --mixed $(GHUB_DIR))
+  LOAD_PATH += -L $(shell cygpath --mixed $(GRAPHQL_DIR))
   LOAD_PATH += -L $(shell cygpath --mixed $(MAGIT_POPUP_DIR))
+  LOAD_PATH += -L $(shell cygpath --mixed $(TREEPY_DIR))
   LOAD_PATH += -L $(shell cygpath --mixed $(WITH_EDITOR_DIR))
 else
   LOAD_PATH += -L $(DASH_DIR)
   LOAD_PATH += -L $(GHUB_DIR)
+  LOAD_PATH += -L $(GRAPHQL_DIR)
   LOAD_PATH += -L $(MAGIT_POPUP_DIR)
+  LOAD_PATH += -L $(TREEPY_DIR)
   LOAD_PATH += -L $(WITH_EDITOR_DIR)
 endif
 
@@ -175,3 +197,11 @@ ORG_LOAD_PATH += -L ../../org/lisp
 ORG_LOAD_PATH += -L ../../org/contrib/lisp
 ORG_LOAD_PATH += -L ../../ox-texinfo+
 endif
+
+## Publish ###########################################################
+
+PUBLISH_TARGETS ?= html html-dir pdf epub
+
+DOCBOOK_XSL ?= /usr/share/xml/docbook/stylesheet/docbook-xsl/epub/docbook.xsl
+
+EPUBTRASH = epub.xml META-INF OEBPS

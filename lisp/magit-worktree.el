@@ -27,9 +27,6 @@
 
 ;;; Code:
 
-(eval-when-compile
-  '(require 'pcase)) ; `pcase-dolist' isn't autoloaded by v24.4
-
 (require 'magit)
 
 ;;; Commands
@@ -38,8 +35,11 @@
 (magit-define-popup magit-worktree-popup
   "Popup console for worktree commands."
   :man-page "git-worktree"
-  :actions  '((?b "Create new worktree"            magit-worktree-checkout)
+  :actions  `((?b "Create new worktree"            magit-worktree-checkout)
               (?c "Create new branch and worktree" magit-worktree-branch)
+              ,@(and (not (require (quote forge) nil t))
+                     '((?p "Create new worktree from pull-request"
+                           magit-worktree-checkout-pull-request)))
               (?k "Delete worktree"                magit-worktree-delete)
               (?g "Show status for worktree"       magit-worktree-status))
   :max-action-columns 1)
@@ -53,6 +53,35 @@
            branch)))
   (magit-run-git "worktree" "add" (expand-file-name path) branch)
   (magit-diff-visit-directory path))
+
+(defun magit-worktree-checkout-pull-request (path pr)
+  "Create, configure and checkout a new worktree from a pull-request.
+This is like `magit-checkout-pull-request', except that it
+also creates a new worktree. Please see the manual for more
+information."
+  (interactive
+   (let ((pr (magit-read-pull-request "Checkout pull request")))
+     (let-alist pr
+       (let ((path (let ((branch (magit--pullreq-branch pr t)))
+                     (read-directory-name
+                      (format "Checkout #%s as `%s' in new worktree: "
+                              .number branch)
+                      (file-name-directory
+                       (directory-file-name default-directory))
+                      nil nil
+                      (if (string-match-p "\\`pr-[0-9]+\\'" branch)
+                          (number-to-string .number)
+                        (format "%s-%s" .number .head.ref))))))
+         (when (equal path "")
+           (user-error "The empty string isn't a valid path"))
+         (list path pr)))))
+  (when (and (file-exists-p path)
+             (not (and (file-directory-p path)
+                       (= (length (directory-files "/tmp/testing/")) 2))))
+    (user-error "%s already exists and isn't empty" path))
+  (magit-worktree-checkout path
+                           (let ((inhibit-magit-refresh t))
+                             (magit-branch-pull-request pr))))
 
 ;;;###autoload
 (defun magit-worktree-branch (path branch start-point &optional force)
@@ -72,7 +101,7 @@ The primary worktree cannot be deleted."
    (list (magit-completing-read "Delete worktree"
                                 (cdr (magit-list-worktrees))
                                 nil t nil nil
-                                (magit-section-when (worktree)))))
+                                (magit-section-value-if 'worktree))))
   (if (file-directory-p (expand-file-name ".git" worktree))
       (user-error "Deleting %s would delete the shared .git directory" worktree)
     (let ((primary (file-name-as-directory (caar (magit-list-worktrees)))))
@@ -84,7 +113,10 @@ The primary worktree cannot be deleted."
       (if (file-exists-p default-directory)
           (magit-run-git "worktree" "prune")
         (let ((default-directory primary))
-          (magit-run-git "worktree" "prune"))))))
+          (magit-run-git "worktree" "prune"))
+        (when (derived-mode-p 'magit-status-mode)
+          (kill-buffer)
+          (magit-status-internal primary))))))
 
 (defun magit-worktree-status (worktree)
   "Show the status for the worktree at point.
@@ -93,7 +125,7 @@ minibuffer.  If the worktree at point is the one whose
 status is already being displayed in the current buffer,
 then show it in Dired instead."
   (interactive
-   (list (or (magit-section-when (worktree))
+   (list (or (magit-section-value-if 'worktree)
              (magit-completing-read
               "Show status for worktree"
               (cl-delete (directory-file-name (magit-toplevel))
@@ -118,7 +150,7 @@ If there is only one worktree, then insert nothing."
       (magit-insert-section (worktrees)
         (magit-insert-heading "Worktrees:")
         (let* ((cols
-                (mapcar (-lambda ((path barep commit branch))
+                (mapcar (pcase-lambda (`(,path ,barep ,commit ,branch))
                           (cons (cond
                                  (branch (propertize branch
                                                      'face 'magit-branch-local))

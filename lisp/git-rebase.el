@@ -191,6 +191,7 @@
     ["Squash" git-rebase-squash t]
     ["Fixup" git-rebase-fixup t]
     ["Kill" git-rebase-kill-line t]
+    ["Noop" git-rebase-noop t]
     ["Execute" git-rebase-exec t]
     ["Move Down" git-rebase-move-line-down t]
     ["Move Up" git-rebase-move-line-up t]
@@ -275,11 +276,12 @@ If N is negative, move the commit up instead.  With an active
 region, move all the lines that the region touches, not just the
 current line."
   (interactive "p")
-  (-let* (((beg end) (or (git-rebase-region-bounds)
-                         (list (line-beginning-position)
-                               (1+ (line-end-position)))))
-          (pt-offset (- (point) beg))
-          (mark-offset (and mark-active (- (mark) beg))))
+  (pcase-let* ((`(,beg ,end)
+                (or (git-rebase-region-bounds)
+                    (list (line-beginning-position)
+                          (1+ (line-end-position)))))
+               (pt-offset (- (point) beg))
+               (mark-offset (and mark-active (- (mark) beg))))
     (save-restriction
       (narrow-to-region
        (point-min)
@@ -518,6 +520,8 @@ running 'man git-rebase' at the command line) for details."
       ("^\\(exec\\) \\(.*\\)"
        (1 'font-lock-keyword-face)
        (2 'git-rebase-description))
+      ("^\\(noop\\)"
+       (1 'font-lock-keyword-face))
       (git-rebase-match-comment-line 0 'font-lock-comment-face)
       (,(concat git-rebase-comment-re " *" action-re)
        0 'git-rebase-killed-action t)
@@ -539,14 +543,14 @@ By default, this is the same except for the \"pick\" command."
       (goto-char (point-min))
       (when (and git-rebase-show-instructions
                  (re-search-forward
-                  (concat git-rebase-comment-re " p, pick")
+                  (concat git-rebase-comment-re "\\s-+p, pick")
                   nil t))
         (goto-char (line-beginning-position))
-        (--each git-rebase-command-descriptions
+        (pcase-dolist (`(,cmd . ,desc) git-rebase-command-descriptions)
           (insert (format "%s %-8s %s\n"
                           comment-start
-                          (substitute-command-keys (format "\\[%s]" (car it)))
-                          (cdr it))))
+                          (substitute-command-keys (format "\\[%s]" cmd))
+                          desc)))
         (while (re-search-forward (concat git-rebase-comment-re
                                           "\\(  ?\\)\\([^\n,],\\) "
                                           "\\([^\n ]+\\) ")

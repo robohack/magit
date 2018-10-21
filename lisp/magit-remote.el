@@ -138,7 +138,7 @@ to be used to view and change remote related variables."
               (?r "Rename"               magit-remote-rename)
               (?p "Prune stale branches" magit-remote-prune)
               (?k "Remove"               magit-remote-remove)
-              (?p "Prune stale refspecs" magit-remote-prune-refspecs))
+              (?P "Prune stale refspecs" magit-remote-prune-refspecs))
   :max-action-columns 2)
 
 ;;;; Commands
@@ -260,11 +260,11 @@ the now stale refspecs.  Other stale branches are not removed."
                         (length (cl-mapcan (lambda (s) (copy-sequence (cdr s)))
                                            stale)))
                 nil
-                (--map (pcase-let ((`(,refspec . ,refs) it))
-                         (concat refspec "\n"
-                                 (mapconcat (lambda (b) (concat "  " b))
-                                            refs "\n")))
-                       stale)))
+                (mapcar (pcase-lambda (`(,refspec . ,refs))
+                          (concat refspec "\n"
+                                  (mapconcat (lambda (b) (concat "  " b))
+                                             refs "\n")))
+                        stale)))
             (pcase-dolist (`(,refspec . ,refs) stale)
               (magit-call-git "config" "--unset" variable
                               (regexp-quote refspec))
@@ -451,7 +451,7 @@ Delete the symbolic-ref \"refs/remotes/<remote>/HEAD\"."
               "Fetch from"
               (?p magit-get-push-remote    magit-fetch-from-pushremote)
               (?u magit-get-remote         magit-fetch-from-upstream)
-              (?e "elsewhere"              magit-fetch)
+              (?e "elsewhere"              magit-fetch-other)
               (?a "all remotes"            magit-fetch-all)
               "Fetch"
               (?o "another branch"         magit-fetch-branch)
@@ -485,7 +485,7 @@ Delete the symbolic-ref \"refs/remotes/<remote>/HEAD\"."
       (user-error "No branch is checked out"))))
 
 ;;;###autoload
-(defun magit-fetch (remote args)
+(defun magit-fetch-other (remote args)
   "Fetch from another repository."
   (interactive (list (magit-read-remote "Fetch remote")
                      (magit-fetch-arguments)))
@@ -514,7 +514,9 @@ Delete the symbolic-ref \"refs/remotes/<remote>/HEAD\"."
 ;;;###autoload
 (defun magit-fetch-all (args)
   "Fetch from all remotes."
-  (interactive (list (magit-fetch-arguments)))
+  (interactive (list (cl-intersection (magit-fetch-arguments)
+                                      (list "--verbose" "--prune")
+                                      :test #'equal)))
   (run-hooks 'magit-credential-hook)
   (magit-run-git-async "remote" "update" args))
 
@@ -571,7 +573,7 @@ prefix argument fetch all remotes."
                  (propertize "Pull from" 'face 'magit-popup-heading)))
              (?p magit-get-push-branch     magit-pull-from-pushremote)
              (?u magit-get-upstream-branch magit-pull-from-upstream)
-             (?e "elsewhere"               magit-pull))
+             (?e "elsewhere"               magit-pull-branch))
   :default-action 'magit-pull
   :max-action-columns 1)
 
@@ -616,7 +618,7 @@ missing.  To add them use something like:
                  (propertize "Pull from" 'face 'magit-popup-heading)))
              (?p magit-get-push-branch     magit-pull-from-pushremote)
              (?u magit-get-upstream-branch magit-pull-from-upstream)
-             (?e "elsewhere"               magit-pull)
+             (?e "elsewhere"               magit-pull-branch)
              "Fetch from"
              (?f "remotes"           magit-fetch-all-no-prune)
              (?F "remotes and prune" magit-fetch-all-prune)
@@ -635,8 +637,8 @@ missing.  To add them use something like:
 
 (defun magit-git-pull (source args)
   (run-hooks 'magit-credential-hook)
-  (-let [(remote . branch)
-         (magit-split-branch-name source)]
+  (pcase-let ((`(,remote . ,branch)
+               (magit-split-branch-name source)))
     (magit-run-git-with-editor "pull" args remote branch)))
 
 ;;;###autoload
@@ -662,7 +664,7 @@ missing.  To add them use something like:
       (user-error "No branch is checked out"))))
 
 ;;;###autoload
-(defun magit-pull (source args)
+(defun magit-pull-branch (source args)
   "Pull from a branch read in the minibuffer."
   (interactive (list (magit-read-remote-branch "Pull" nil nil nil t)
                      (magit-pull-arguments)))
@@ -728,8 +730,8 @@ removed after restarting Emacs."
 
 (defun magit-git-push (branch target args)
   (run-hooks 'magit-credential-hook)
-  (-let [(remote . target)
-         (magit-split-branch-name target)]
+  (pcase-let ((`(,remote . ,target)
+               (magit-split-branch-name target)))
     (magit-run-git-async "push" "-v" args remote
                          (format "%s:refs/heads/%s" branch target))))
 
@@ -757,7 +759,7 @@ the push-remote can be changed before pushed to it."
                           "remote.pushDefault"
                         (format "branch.%s.pushRemote" it)))
                      push-remote))
-             (-if-let (remote (magit-get-push-remote it))
+             (if-let ((remote (magit-get-push-remote it)))
                  (if (member remote (magit-list-remotes))
                      (magit-git-push it (concat remote "/" it) args)
                    (user-error "Remote `%s' doesn't exist" remote))
@@ -797,7 +799,7 @@ upstream can be changed before pushed to it."
       (progn
         (when upstream
           (magit-set-branch*merge/remote it upstream))
-        (-if-let (target (magit-get-upstream-branch it))
+        (if-let ((target (magit-get-upstream-branch it)))
             (magit-git-push it target args)
           (user-error "No upstream is configured for %s" it)))
     (user-error "No branch is checked out")))
@@ -924,9 +926,9 @@ the popup buffer."
 (defun magit-push-implicitly--desc ()
   (let ((default (magit-get "push.default")))
     (unless (equal default "nothing")
-      (or (-when-let* ((remote (or (magit-get-remote)
-                                   (magit-remote-p "origin")))
-                       (refspec (magit-get "remote" remote "push")))
+      (or (when-let ((remote (or (magit-get-remote)
+                                 (magit-remote-p "origin")))
+                     (refspec (magit-get "remote" remote "push")))
             (format "%s using %s"
                     (propertize remote  'face 'magit-branch-remote)
                     (propertize refspec 'face 'bold)))
@@ -995,27 +997,29 @@ To add this command to the push popup add this to your init file:
               (?C "Detect copies"    "-C")
               (?A "Diff algorithm"   "--diff-algorithm="
                   magit-diff-select-algorithm)
-              (?o "Output directory" "--output-directory="))
+              (?o "Output directory" "--output-directory=")
+              (?F "Limit to files"   "-- " magit-read-files))
   :actions  '((?p "Format patches"   magit-format-patch)
               (?r "Request pull"     magit-request-pull))
   :default-action 'magit-format-patch)
 
 ;;;###autoload
-(defun magit-format-patch (range args)
+(defun magit-format-patch (range args files)
   "Create patches for the commits in RANGE.
 When a single commit is given for RANGE, create a patch for the
 changes introduced by that commit (unlike 'git format-patch'
 which creates patches for all commits that are reachable from
 `HEAD' but not from the specified commit)."
   (interactive
-   (list (-if-let (revs (magit-region-values 'commit t))
+   (cons (if-let ((revs (magit-region-values 'commit t)))
              (concat (car (last revs)) "^.." (car revs))
-           (let ((range (magit-read-range-or-commit "Format range or commit")))
+           (let ((range (magit-read-range-or-commit
+                         "Format range or commit")))
              (if (string-match-p "\\.\\." range)
                  range
                (format "%s~..%s" range range))))
-         (magit-patch-arguments)))
-  (magit-call-git "format-patch" range args)
+         (magit-popup-export-file-args (magit-patch-arguments))))
+  (magit-run-git "format-patch" range args "--" files)
   (when (member "--cover-letter" args)
     (find-file
      (expand-file-name

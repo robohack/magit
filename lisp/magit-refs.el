@@ -308,7 +308,7 @@ Type \\[magit-reset] to reset `HEAD' to the commit at point.
   (magit-set-header-line-format
    (format "%s %s" ref (mapconcat #'identity args " ")))
   (magit-insert-section (branchbuf)
-    (run-hooks 'magit-refs-sections-hook))
+    (magit-run-section-hook 'magit-refs-sections-hook))
   (add-hook 'kill-buffer-hook 'magit-preserve-section-visibility-cache))
 
 ;;; Commands
@@ -490,9 +490,9 @@ Insert a header line with the name and description of the
 current branch.  The description is taken from the Git variable
 `branch.<NAME>.description'; if that is undefined then no header
 line is inserted at all."
-  (-when-let* ((branch (magit-get-current-branch))
-               (desc (magit-get "branch" branch "description"))
-               (desc (split-string desc "\n")))
+  (when-let ((branch (magit-get-current-branch))
+             (desc (magit-get "branch" branch "description"))
+             (desc (split-string desc "\n")))
     (when (equal (car (last desc)) "")
       (setq desc (butlast desc)))
     (magit-insert-section (branchdesc branch t)
@@ -503,8 +503,8 @@ line is inserted at all."
 
 (defun magit-insert-tags ()
   "Insert sections showing all tags."
-  (-when-let (tags (magit-git-lines "tag" "--list" "-n"
-                                    (cadr magit-refresh-args)))
+  (when-let ((tags (magit-git-lines "tag" "--list" "-n"
+                                    (cadr magit-refresh-args))))
     (let ((_head (magit-rev-parse "HEAD")))
       (magit-insert-section (tags)
         (magit-insert-heading "Tags:")
@@ -562,7 +562,7 @@ line is inserted at all."
                       (make-string (max 1 (- magit-refs-primary-column-width
                                              (length abbrev)))
                                    ?\s)
-                      (magit-log-propertize-keywords nil msg)))
+                      (and msg (magit-log-propertize-keywords nil msg))))
                   (when (magit-buffer-margin-p)
                     (magit-refs--format-margin branch))
                   (magit-refs--insert-cherry-commits branch section)))))))
@@ -608,20 +608,18 @@ line is inserted at all."
                       def
                     (pcase-let ((`(,min . ,max) def))
                       (min max (apply #'max min (mapcar #'car lines)))))))
-    (mapcar (lambda (arg)
-              (pcase-let ((`(,_ ,branch ,focus ,branch-desc ,u:ahead ,p:ahead
-                                ,u:behind ,upstream ,p:behind ,push ,msg)
-                           arg))
-                (list branch focus branch-desc u:ahead p:ahead
-                      (make-string (max 1 (- magit-refs-primary-column-width
-                                             (length (concat branch-desc
-                                                             u:ahead
-                                                             p:ahead
-                                                             u:behind))))
-                                   ?\s)
-                      u:behind upstream p:behind push
-                      msg)))
-              lines)))
+    (mapcar (pcase-lambda (`(,_ ,branch ,focus ,branch-desc ,u:ahead ,p:ahead
+                                ,u:behind ,upstream ,p:behind ,push ,msg))
+              (list branch focus branch-desc u:ahead p:ahead
+                    (make-string (max 1 (- magit-refs-primary-column-width
+                                           (length (concat branch-desc
+                                                           u:ahead
+                                                           p:ahead
+                                                           u:behind))))
+                                 ?\s)
+                    u:behind upstream p:behind push
+                    msg))
+            lines)))
 
 (defun magit-refs--format-local-branch (line)
   (pcase-let ((`(,head ,branch ,upstream ,u:ref ,u:track
@@ -714,7 +712,7 @@ line is inserted at all."
            (t "")))))
 
 (defun magit-refs--insert-refname-p (refname)
-  (--if-let (-first (-lambda ((key . _))
+  (--if-let (-first (pcase-lambda (`(,key . ,_))
                       (if (functionp key)
                           (funcall key refname)
                         (string-match-p key refname)))
@@ -742,7 +740,8 @@ line is inserted at all."
   (save-excursion
     (goto-char (line-beginning-position 0))
     (let ((line (magit-rev-format "%ct%cN" commit)))
-      (magit-log-format-margin (substring line 10)
+      (magit-log-format-margin commit
+                               (substring line 10)
                                (substring line 0 10)))))
 
 (provide 'magit-refs)
